@@ -1,0 +1,15 @@
+﻿{
+  "short_name": "VoltSense",
+  "name": "VoltSense Dual-Utility Smart Energy App",
+  "icons": [
+    {
+      "src": "/vite.svg",
+      "type": "image/svg+xml",
+      "sizes": "192x192"
+    }
+  ],
+  "start_url": "/",
+  "background_color": "#090d16",
+  "display": "standalone",
+  "theme_color": "#0ea5e9"
+}
