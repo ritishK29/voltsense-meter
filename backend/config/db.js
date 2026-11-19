@@ -5,13 +5,15 @@ const { MongoMemoryServer } = require('mongodb-memory-server');
 
 const connectDB = async () => {
   try {
-    const conn = await mongoose.connect(process.env.MONGO_URI, { serverSelectionTimeoutMS: 1200 });
+    const conn = await mongoose.connect(process.env.MONGO_URI, {
+      serverSelectionTimeoutMS: 10000,
+    });
     console.log(`MongoDB Connected: ${conn.connection.host}`);
   } catch (err) {
+    console.error('Atlas Connection Error:', err.message);
     console.log('Starting VoltSense Local DB Engine...');
     const dbFolder = path.join(__dirname, '..', 'voltsense-db-data');
     if (!fs.existsSync(dbFolder)) fs.mkdirSync(dbFolder, { recursive: true });
-    // Remove stale lock file if previous process crashed
     const lockFile = path.join(dbFolder, 'mongod.lock');
     if (fs.existsSync(lockFile)) {
       try { fs.unlinkSync(lockFile); } catch {}
@@ -20,8 +22,8 @@ const connectDB = async () => {
     const mongod = await MongoMemoryServer.create({
       instance: {
         dbPath: dbFolder,
-        storageEngine: 'wiredTiger'
-      }
+        storageEngine: 'wiredTiger',
+      },
     });
     const uri = mongod.getUri();
     const conn = await mongoose.connect(uri);
