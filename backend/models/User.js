@@ -1,6 +1,9 @@
 ﻿const mongoose = require('mongoose');
 
 const userSchema = new mongoose.Schema({
+  accruedKwh: { type: Number, default: 28.5 },
+accruedScm: { type: Number, default: 4.2 },
+lastMeterSync: { type: Date, default: Date.now },
   name: { type: String, required: true },
   email: { type: String, required: true, unique: true },
   password: { type: String, required: true },

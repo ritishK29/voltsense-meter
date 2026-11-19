@@ -10,19 +10,44 @@ const router = express.Router();
 
 router.get('/dashboard', protect, async (req, res) => {
   try {
+    const user = await User.findById(req.user._id);
     const devices = await Device.find({ userId: req.user._id }).lean();
     const alerts = await Alert.find({ userId: req.user._id }).sort({ createdAt: -1 }).limit(10).lean();
-    const analytics = analyzeDualUtility(devices, req.user.monthlyBudget);
+
+    // Real-time consumption accumulation based on active load & elapsed hours
+    const now = new Date();
+    const lastSync = user.lastMeterSync ? new Date(user.lastMeterSync) : now;
+    const elapsedHours = Math.min(24, Math.max(0, (now - lastSync) / (1000 * 60 * 60)));
+
+    const activeWatts = devices
+      .filter((d) => d.utilityType === 'ELECTRICITY' && d.isActive)
+      .reduce((sum, d) => sum + (Number(d.ratingValue) || 0), 0);
+
+    const activeScmHr = devices
+      .filter((d) => d.utilityType === 'GAS' && d.isActive)
+      .reduce((sum, d) => sum + (Number(d.ratingValue) || 0), 0);
+
+    if (elapsedHours > 0 && (activeWatts > 0 || activeScmHr > 0)) {
+      user.accruedKwh = Number(((user.accruedKwh || 0) + (activeWatts / 1000) * elapsedHours).toFixed(4));
+      user.accruedScm = Number(((user.accruedScm || 0) + activeScmHr * elapsedHours).toFixed(4));
+    }
+    user.lastMeterSync = now;
+    await user.save();
+
+    const analytics = analyzeDualUtility(devices, user.monthlyBudget, {
+      accruedKwh: user.accruedKwh,
+      accruedScm: user.accruedScm
+    });
 
     res.json({
       user: {
-        id: req.user._id,
-        name: req.user.name,
-        email: req.user.email,
-        meterId: req.user.meterId,
-        gasMeterId: req.user.gasMeterId,
-        gasValveOpen: req.user.gasValveOpen,
-        monthlyBudget: req.user.monthlyBudget
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        meterId: user.meterId,
+        gasMeterId: user.gasMeterId,
+        gasValveOpen: user.gasValveOpen,
+        monthlyBudget: user.monthlyBudget
       },
       analytics,
       alerts

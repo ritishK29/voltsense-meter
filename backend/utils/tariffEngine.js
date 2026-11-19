@@ -20,34 +20,52 @@ const calculateGasTariff = (scm) => {
   return { billAmount: Math.round(amount + 75), slabLabel };
 };
 
-const analyzeDualUtility = (devices, monthlyBudget = 5000) => {
-  let activeElecWatts = 0, predictedElecUnits = 0, peakElecUnits = 0, activeGasScmHr = 0, predictedGasScm = 0;
+const analyzeDualUtility = (devices, monthlyBudget = 5000, meterReading = {}) => {
+  let activeElecWatts = 0, remainingElecUnits = 0, peakElecUnits = 0, activeGasScmHr = 0, remainingGasScm = 0;
+  const remainingDays = Math.max(1, 30 - new Date().getDate());
 
   const breakdown = devices.map((dev) => {
     const isElec = dev.utilityType === 'ELECTRICITY';
     const rating = Number(dev.ratingValue) || 0;
     const hrs = Number(dev.hoursPerDay) || 0;
     if (dev.isActive) { if (isElec) activeElecWatts += rating; else activeGasScmHr += rating; }
+
+    // Monthly projected units for breakdown & future days
     const monthlyUnits = isElec ? (rating * hrs * 30) / 1000 : rating * hrs * 30;
-    if (isElec) { predictedElecUnits += monthlyUnits; if (dev.isPeakHeavy) peakElecUnits += monthlyUnits * 0.65; }
-    else predictedGasScm += monthlyUnits;
+    const futureUnits = isElec ? (rating * hrs * remainingDays) / 1000 : rating * hrs * remainingDays;
+
+    if (isElec) {
+      remainingElecUnits += futureUnits;
+      if (dev.isPeakHeavy) peakElecUnits += monthlyUnits * 0.65;
+    } else {
+      remainingGasScm += futureUnits;
+    }
+
     const estCost = isElec ? monthlyUnits * 7.2 : monthlyUnits * 49.5;
     return { ...dev, monthlyUnits: Number(monthlyUnits.toFixed(1)), monthlyCost: Math.round(estCost) };
   });
 
-  const cycleRatio = 18 / 30;
-  const accruedKwh = Number((predictedElecUnits * cycleRatio).toFixed(1));
-  const accruedScm = Number((predictedGasScm * cycleRatio).toFixed(1));
+  // Persistent real consumption (never drops or jumps when adding/deleting devices)
+  const accruedKwh = Number((Number(meterReading.accruedKwh) || 0).toFixed(2));
+  const accruedScm = Number((Number(meterReading.accruedScm) || 0).toFixed(2));
+
+  // Month-end forecast = Already consumed + Future remaining days with current active devices
+  const predictedElecUnits = accruedKwh + remainingElecUnits;
+  const predictedGasScm = accruedScm + remainingGasScm;
+
   const elecCalc = calculateElectricityTariff(predictedElecUnits);
   const gasCalc = calculateGasTariff(predictedGasScm);
   const elecAccruedBill = calculateElectricityTariff(accruedKwh).billAmount;
   const gasAccruedBill = calculateGasTariff(accruedScm).billAmount;
+
   const totalPredicted = elecCalc.billAmount + gasCalc.billAmount;
   const totalAccruedBill = elecAccruedBill + gasAccruedBill;
   const savedVsPast = Math.max(240, 6890 - totalPredicted);
 
   const totalCostSum = breakdown.reduce((acc, d) => acc + d.monthlyCost, 0) || 1;
-  const rankedBreakdown = breakdown.map((d) => ({ ...d, costSharePercent: Math.round((d.monthlyCost / totalCostSum) * 100) })).sort((a, b) => b.monthlyCost - a.monthlyCost);
+  const rankedBreakdown = breakdown
+    .map((d) => ({ ...d, costSharePercent: Math.round((d.monthlyCost / totalCostSum) * 100) }))
+    .sort((a, b) => b.monthlyCost - a.monthlyCost);
 
   let status = 'GREEN';
   if (totalPredicted > monthlyBudget) status = 'RED';
